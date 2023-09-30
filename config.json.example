@@ -1,0 +1,14 @@
+{
+    "local_backup_dir": "",
+    "servers": [
+        {
+            "hostname": "",
+            "ip": "",
+            "port": ,
+            "username": "",
+            "ssh_key": "",
+            "ssh_key_passphrase": "",
+            "backup_dir": ""
+        }
+    ]
+}
