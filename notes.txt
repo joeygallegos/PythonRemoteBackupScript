@@ -1,0 +1,17 @@
+error for no file found when hunting
+in this case, the file was *.tar not *.gz
+give warning for large file download
+
+INFO:root:Latest file matching www-backup-*.gz on AshleyCore06: ls: cannot access '/home/backup/www-backup-*.gz': No such file or directory
+INFO:paramiko.transport.sftp:[chan 1] sftp session closed.
+Traceback (most recent call last):
+  File "D:\Dropbox\Web Work\PythonRemoteBackupScript\run.py", line 141, in <module>
+    backup_data(config)
+  File "D:\Dropbox\Web Work\PythonRemoteBackupScript\run.py", line 86, in backup_data
+    sftp.get(latest_file, localpath=local_file_path)
+  File "C:\Users\Joey\scoop\apps\python\current\Lib\site-packages\pysftp\__init__.py", line 249, in get
+    self._sftp.get(remotepath, localpath, callback=callback)
+  File "C:\Users\Joey\scoop\apps\python\current\Lib\site-packages\paramiko\sftp_client.py", line 839, in get
+    with open(localpath, "wb") as fl:
+         ^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 22] Invalid argument: "D:\\Dropbox\\Web Work\\PythonRemoteBackupScript\\archive\\AshleyCore06_www-backup-*_UEn2EJi7mh.gz': No such file or directory"
