@@ -50,91 +50,76 @@ def backup_data(config):
         if server.get("ssh_key_passphrase"):
             connection_params["private_key_pass"] = server.get("ssh_key_passphrase")
 
-        with pysftp.Connection(**connection_params) as sftp:
-            logging.info(
-                f"Connected to {hostname}, checking for startup commands if any defined"
-            )
-
-            # If there are startup commands, run them once connected
-            if server.get("commands_on_connect"):
-                logging.info(f"Found startup commands, running")
-                for connect_command in server.get("commands_on_connect"):
-                    command_output = sftp.execute(connect_command)
-                    logging.info(f"Command: {connect_command}: {command_output}")
-
-            remote_dir = server.get("backup_dir")
-            if not sftp.exists(remote_dir):
-                error_message = (
-                    f"Remote directory {remote_dir} does not exist on {hostname}"
+        try:
+            with pysftp.Connection(**connection_params) as sftp:
+                logging.info(
+                    f"Connected to {hostname}, checking for startup commands if any defined"
                 )
-                logging.error(f"{Fore.RED}{error_message}{Style.RESET_ALL}")
-                show_warning(error_message)
-                continue  # Skip to the next server
 
-            files_to_backup = server.get("files", [])
-            for file_pattern in files_to_backup:
-                try:
-                    latest_file_output = sftp.execute(
-                        f"ls -t {remote_dir}/{file_pattern} | head -n 1"
+                if server.get("commands_on_connect"):
+                    logging.info("Found startup commands, running")
+                    for connect_command in server.get("commands_on_connect"):
+                        try:
+                            command_output = sftp.execute(connect_command)
+                            logging.info(f"Command: {connect_command}: {command_output}")
+                        except Exception as cmd_error:
+                            logging.error(
+                                f"Failed to execute command '{connect_command}' on {hostname}: {cmd_error}"
+                            )
+
+                remote_dir = server.get("backup_dir")
+                if not sftp.exists(remote_dir):
+                    error_message = (
+                        f"Remote directory {remote_dir} does not exist on {hostname}"
                     )
-                    if not latest_file_output:
+                    logging.error(f"{Fore.RED}{error_message}{Style.RESET_ALL}")
+                    show_warning(error_message)
+                    continue  # Skip to the next server
+
+                files_to_backup = server.get("files", [])
+                for file_pattern in files_to_backup:
+                    try:
+                        latest_file_output = sftp.execute(
+                            f"ls -t {remote_dir}/{file_pattern} | head -n 1"
+                        )
+                        if not latest_file_output:
+                            show_warning(
+                                f"No files matching {file_pattern} found on {hostname}"
+                            )
+                            raise FileNotFoundError(
+                                f"No files matching {file_pattern} found on {hostname}"
+                            )
+
+                        latest_file = latest_file_output[0].decode().strip()
+                        logging.info(
+                            f"Latest file matching {file_pattern} on {hostname}: {latest_file}"
+                        )
+
+                        alphabet = string.ascii_letters + string.digits
+                        nonce = "".join(secrets.choice(alphabet) for _ in range(10))
+
+                        local_file_name = f"{hostname}_{latest_file.split('/')[-1].replace('.gz', f'_{nonce}.gz')}"
+                        local_file_path = os.path.join(
+                            config["local_backup_dir"], local_file_name
+                        )
+
+                        sftp.get(latest_file, localpath=local_file_path)
+                        logging.info(f"File downloaded to {local_file_path}")
+
+                    except FileNotFoundError as e:
+                        logging.warning(e)
+                    except Exception as e:
+                        logging.error(
+                            f"Unexpected error while processing {file_pattern} on {hostname}: {e}"
+                        )
                         show_warning(
-                            f"No files matching {file_pattern} found on {hostname}"
-                        )
-                        raise FileNotFoundError(
-                            f"No files matching {file_pattern} found on {hostname}"
+                            f"Unexpected error while processing {file_pattern} on {hostname}: {e}"
                         )
 
-                    latest_file = latest_file_output[0].decode().strip()
-                    logging.info(
-                        f"Latest file matching {file_pattern} on {hostname}: {latest_file}"
-                    )
-
-                    # Generate a 10-character nonce
-                    alphabet = string.ascii_letters + string.digits
-                    nonce = "".join(secrets.choice(alphabet) for _ in range(10))
-
-                    local_file_name = f"{hostname}_{latest_file.split('/')[-1].replace('.gz', f'_{nonce}.gz')}"
-                    local_file_path = os.path.join(
-                        config["local_backup_dir"], local_file_name
-                    )
-
-                    sftp.get(latest_file, localpath=local_file_path)
-                    logging.info(f"File downloaded to {local_file_path}")
-
-                    latest_file_size = os.path.getsize(local_file_path)
-                    size_threshold = latest_file_size * 0.75
-
-                    # Check the sizes of the last 5 files
-                    previous_files_output = sftp.execute(
-                        f"ls -t {remote_dir}/{file_pattern} | head -n 6 | tail -n 5"
-                    )
-                    previous_files = [
-                        f.decode().strip() for f in previous_files_output if f
-                    ]
-
-                    smaller_file_found = any(
-                        sftp.stat(os.path.join(remote_dir, file)).st_size
-                        < size_threshold
-                        for file in previous_files
-                    )
-
-                    if smaller_file_found:
-                        error_message = f"Some recent files matching {file_pattern} on {hostname} are at least 25% smaller in size than the latest file. Please verify the downloaded file."
-                        print(
-                            f"{Fore.RED}{Style.BRIGHT}WARNING: {error_message}{Style.RESET_ALL}"
-                        )
-                        show_warning(error_message)
-
-                except FileNotFoundError as e:
-                    logging.warning(e)
-                except Exception as e:
-                    logging.error(
-                        f"Unexpected error while processing {file_pattern} on {hostname}: {e}"
-                    )
-                    show_warning(
-                        f"Unexpected error while processing {file_pattern} on {hostname}: {e}"
-                    )
+        except Exception as e:
+            logging.error(f"Failed to connect to {hostname}: {e}")
+            show_warning(f"Failed to connect to {hostname}: {e}")
+            continue  # Move to the next server in the loop
 
 
 if __name__ == "__main__":
@@ -144,3 +129,4 @@ if __name__ == "__main__":
     )  # Set logging level to INFO for detailed output
     config = get_config()
     backup_data(config)
+    input("Press ENTER to exit...")
